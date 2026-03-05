@@ -11,9 +11,12 @@ const Sidebar = (() => {
   let _onNewNote = null;
   let _searchTimer = null;
 
-  function init({ onSelect, onNewNote }) {
+  let _onPin = null;
+
+  function init({ onSelect, onNewNote, onPin }) {
     _onSelect = onSelect;
     _onNewNote = onNewNote;
+    _onPin = onPin;
 
     searchInput.addEventListener('input', () => {
       clearTimeout(_searchTimer);
@@ -64,10 +67,6 @@ const Sidebar = (() => {
       (note.slug === _activeSlug ? ' active' : '');
     li.dataset.slug = note.slug;
 
-    const icon = document.createElement('span');
-    icon.className = 'note-item-icon';
-    icon.textContent = note.pinned ? '▶' : '·';
-
     const textWrap = document.createElement('span');
     textWrap.className = 'note-item-text';
 
@@ -86,9 +85,19 @@ const Sidebar = (() => {
     type.className = 'note-item-type';
     type.textContent = note.type === 'adhoc' ? 'note' : '';
 
-    li.appendChild(icon);
+    // Pin toggle button — always visible when pinned, appears on hover otherwise
+    const pinBtn = document.createElement('button');
+    pinBtn.className = 'note-item-pin-btn' + (note.pinned ? ' is-pinned' : '');
+    pinBtn.textContent = note.pinned ? '[*]' : '[ ]';
+    pinBtn.title = note.pinned ? 'Unpin' : 'Pin to top';
+    pinBtn.addEventListener('click', async (e) => {
+      e.stopPropagation(); // don't select the note
+      if (_onPin) await _onPin(note.slug, !note.pinned);
+    });
+
     li.appendChild(textWrap);
     li.appendChild(type);
+    li.appendChild(pinBtn);
 
     li.addEventListener('click', () => {
       if (_onSelect) _onSelect(note.slug);

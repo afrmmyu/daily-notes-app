@@ -112,15 +112,35 @@ html, body {
   border-left-color: var(--accent-green);
 }
 
-.note-item-icon {
-  color: var(--text-dim);
+/* Sidebar pin toggle button */
+.note-item-pin-btn {
+  opacity: 0;
   font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--text-dim);
+  background: none;
+  border: none;
+  padding: 0 2px;
+  cursor: pointer;
   flex-shrink: 0;
-  width: 12px;
+  transition: opacity 0.1s, color 0.1s;
+  line-height: 1;
 }
 
-.note-item.pinned .note-item-icon {
+.note-item:hover .note-item-pin-btn {
+  opacity: 1;
+}
+
+/* Always show pin badge when already pinned */
+.note-item-pin-btn.is-pinned {
+  opacity: 1;
   color: var(--accent-amber);
+}
+
+.note-item-pin-btn:hover {
+  color: var(--accent-amber) !important;
+  background: none;
+  border: none;
 }
 
 .note-item-text {
@@ -513,8 +533,23 @@ button.active, button[data-active="true"] {
 }
 
 #pin-btn {
-  font-size: 10px;
-  padding: 3px 7px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  padding: 2px 6px;
+  border-color: transparent;
+  color: var(--text-dim);
+  letter-spacing: 0.05em;
+}
+
+#pin-btn:hover {
+  color: var(--accent-amber);
+  border-color: var(--accent-amber);
+  background: transparent;
+}
+
+#pin-btn[data-active="true"] {
+  color: var(--accent-amber);
+  border-color: transparent;
 }
 
 #add-entry-btn {

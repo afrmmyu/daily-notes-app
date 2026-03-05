@@ -28,7 +28,7 @@ const App = (() => {
     // Init sub-modules
     Todos.init(onTodosChange);
     NotesSection.init();
-    Sidebar.init({ onSelect: loadNote, onNewNote: createAdhocNote });
+    Sidebar.init({ onSelect: loadNote, onNewNote: createAdhocNote, onPin: pinNoteFromSidebar });
 
     // Wire header actions
     pinBtn.addEventListener('click', togglePin);
@@ -177,7 +177,22 @@ const App = (() => {
   function updatePinBtn(pinned) {
     pinBtn.dataset.active = pinned ? 'true' : 'false';
     pinBtn.title = pinned ? 'Unpin note' : 'Pin note';
-    pinBtn.textContent = pinned ? '◀' : '▶';
+    pinBtn.textContent = pinned ? '[*]' : '[ ]';
+  }
+
+  // Called when pin is toggled from the sidebar (not necessarily the current note)
+  async function pinNoteFromSidebar(slug, newPinned) {
+    try {
+      await Api.pinNote(slug, newPinned);
+      // If the toggled note is the currently open one, sync the header button too
+      if (slug === state.currentSlug && state.currentNote) {
+        state.currentNote.frontmatter.pinned = newPinned;
+        updatePinBtn(newPinned);
+      }
+      await Sidebar.refresh(state.currentSlug);
+    } catch (err) {
+      console.error('Pin from sidebar failed:', err);
+    }
   }
 
   // ── Delete ────────────────────────────────────────────────────────
