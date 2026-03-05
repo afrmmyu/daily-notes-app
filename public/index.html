@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Daily Notes</title>
+  <link rel="stylesheet" href="/css/theme.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Sidebar -->
+    <aside id="sidebar">
+      <div id="sidebar-header">
+        <div id="app-title">// daily_notes</div>
+        <div id="sidebar-actions">
+          <input type="search" id="search-input" placeholder="search notes..." autocomplete="off" spellcheck="false">
+          <button id="new-adhoc-btn" title="New ad-hoc note">+ note</button>
+        </div>
+      </div>
+      <ul id="notes-list"></ul>
+    </aside>
+
+    <!-- Main content -->
+    <main id="main">
+      <div id="empty-state">
+        <div id="empty-state-text">
+          <span class="dim">// no note selected</span><br>
+          <span class="dim">select a note from the sidebar or press</span><br>
+          <kbd>+ note</kbd> <span class="dim">to create one</span>
+        </div>
+      </div>
+
+      <div id="note-view" class="hidden">
+        <!-- Note header -->
+        <div id="note-header">
+          <div id="note-title-wrap">
+            <span id="note-title-prefix" class="dim">&gt; </span>
+            <span id="note-title" contenteditable="false" spellcheck="false"></span>
+          </div>
+          <div id="note-header-actions">
+            <span id="note-date" class="dim"></span>
+            <button id="pin-btn" title="Pin note">&#9654;</button>
+            <button id="delete-btn" class="danger" title="Delete note">&#10005;</button>
+          </div>
+        </div>
+
+        <!-- Todo section (daily notes only) -->
+        <section id="todos-panel">
+          <div id="todos-header" class="section-label">[ todo ]</div>
+          <ul id="todo-list"></ul>
+          <div id="add-todo-wrap">
+            <span class="dim">+</span>
+            <input type="text" id="add-todo-input" placeholder="add todo... (enter to save)" autocomplete="off" spellcheck="false">
+          </div>
+        </section>
+
+        <!-- Divider -->
+        <div id="notes-divider" class="section-label">[ notes ]</div>
+
+        <!-- Add Entry button -->
+        <div id="add-entry-wrap">
+          <button id="add-entry-btn">+ add entry</button>
+          <span id="save-indicator" class="dim"></span>
+        </div>
+
+        <!-- TipTap editor -->
+        <div id="editor-container">
+          <div id="editor"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Load TipTap via ESM CDN -->
+  <script type="module">
+    import { Editor } from 'https://esm.sh/@tiptap/core@2';
+    import StarterKit from 'https://esm.sh/@tiptap/starter-kit@2';
+    import Image from 'https://esm.sh/@tiptap/extension-image@2';
+    import { Markdown } from 'https://esm.sh/tiptap-markdown@0.8';
+    window._TipTap = { Editor, StarterKit, Image, Markdown };
+    window.dispatchEvent(new Event('tiptap-ready'));
+  </script>
+
+  <!-- App modules (classic scripts that reference window._TipTap) -->
+  <script src="/js/api.js"></script>
+  <script src="/js/todos.js"></script>
+  <script src="/js/editor.js"></script>
+  <script src="/js/sidebar.js"></script>
+  <script src="/js/notes-section.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>
