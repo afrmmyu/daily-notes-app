@@ -13,17 +13,100 @@ const EditorModule = (() => {
     });
   }
 
+  function buildResizableImage(Image) {
+    return Image.extend({
+      // Add a `width` attribute that round-trips through HTML <img style="width: Xpx">
+      addAttributes() {
+        return {
+          ...this.parent?.(),
+          width: {
+            default: null,
+            parseHTML: el => {
+              const sw = el.style.width;
+              if (sw) return parseInt(sw) || null;
+              const w = el.getAttribute('width');
+              return w ? parseInt(w) : null;
+            },
+            renderHTML: attrs => {
+              if (!attrs.width) return {};
+              return { style: `width: ${attrs.width}px; max-width: 100%;` };
+            },
+          },
+        };
+      },
+
+      // Custom node view: image wrapped in a div with a drag-resize handle
+      addNodeView() {
+        return ({ node, updateAttributes }) => {
+          const wrapper = document.createElement('div');
+          wrapper.className = 'image-wrapper';
+          if (node.attrs.width) wrapper.style.width = node.attrs.width + 'px';
+
+          const img = document.createElement('img');
+          img.src = node.attrs.src || '';
+          img.alt = node.attrs.alt || '';
+          if (node.attrs.title) img.title = node.attrs.title;
+
+          const handle = document.createElement('div');
+          handle.className = 'image-resize-handle';
+          handle.title = 'Drag to resize';
+
+          wrapper.appendChild(img);
+          wrapper.appendChild(handle);
+
+          // Drag-to-resize: track mouse from handle, update wrapper width live,
+          // commit to node attribute on mouseup so auto-save picks it up.
+          let startX, startW;
+          handle.addEventListener('mousedown', e => {
+            e.preventDefault();
+            e.stopPropagation();
+            startX = e.clientX;
+            startW = wrapper.offsetWidth;
+
+            const onMove = e => {
+              const newW = Math.max(50, startW + e.clientX - startX);
+              wrapper.style.width = newW + 'px';
+            };
+            const onUp = e => {
+              const newW = Math.max(50, startW + e.clientX - startX);
+              updateAttributes({ width: newW });
+              document.removeEventListener('mousemove', onMove);
+              document.removeEventListener('mouseup', onUp);
+            };
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
+          });
+
+          return {
+            dom: wrapper,
+            update(updatedNode) {
+              if (updatedNode.type !== node.type) return false;
+              img.src = updatedNode.attrs.src || '';
+              img.alt = updatedNode.attrs.alt || '';
+              wrapper.style.width = updatedNode.attrs.width
+                ? updatedNode.attrs.width + 'px'
+                : '';
+              return true;
+            },
+          };
+        };
+      },
+    });
+  }
+
   async function init(container, onChange) {
     _onChangeCallback = onChange;
     const { Editor, StarterKit, Image, Markdown } = await waitForTipTap();
+    const ResizableImage = buildResizableImage(Image);
 
     _editor = new Editor({
       element: container,
       extensions: [
         StarterKit,
-        Image.configure({ inline: false }),
+        ResizableImage.configure({ inline: false }),
         Markdown.configure({
-          html: false,
+          // html: true allows <img style="width: Xpx"> to round-trip through .md files
+          html: true,
           transformPastedText: true,
           transformCopiedText: true,
         }),
@@ -92,7 +175,27 @@ const EditorModule = (() => {
 
   function getMarkdown() {
     if (!_editor) return '';
-    return _editor.storage.markdown.getMarkdown();
+    const md = _editor.storage.markdown.getMarkdown();
+
+    // Collect width overrides from the live ProseMirror document.
+    // For images that have been resized we emit <img> HTML so the width
+    // persists in the .md file; unsized images stay as clean ![](src) Markdown.
+    const widths = {};
+    _editor.state.doc.descendants(node => {
+      if (node.type.name === 'image' && node.attrs.width && node.attrs.src) {
+        widths[node.attrs.src] = node.attrs.width;
+      }
+    });
+
+    if (!Object.keys(widths).length) return md;
+
+    // Replace ![alt](src) with <img> for any image that has a width set.
+    return md.replace(/!\[([^\]]*)\]\(([^\s)]+)(?:\s+"[^"]*")?\)/g, (match, alt, src) => {
+      const w = widths[src];
+      if (!w) return match;
+      const altAttr = alt ? ` alt="${alt.replace(/"/g, '&quot;')}"` : '';
+      return `<img src="${src}"${altAttr} style="width: ${w}px; max-width: 100%;">`;
+    });
   }
 
   function insertTimestampedEntry() {
