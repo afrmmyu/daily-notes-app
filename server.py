@@ -12,8 +12,14 @@ from datetime import date
 from pathlib import Path
 from werkzeug.utils import secure_filename
 
+import re
+
 import frontmatter
 from flask import Flask, jsonify, request, send_from_directory, abort
+
+# Slugs must only contain alphanumerics, hyphens, and underscores.
+# This prevents path traversal via the slug parameter.
+_SLUG_RE = re.compile(r'^[a-zA-Z0-9_-]+$')
 
 BASE_DIR = Path(__file__).parent
 NOTES_DIR = BASE_DIR / "notes"
@@ -27,12 +33,20 @@ NOTES_DIR.mkdir(exist_ok=True)
 IMAGES_DIR.mkdir(exist_ok=True)
 
 app = Flask(__name__, static_folder=str(PUBLIC_DIR), static_url_path="")
+# Hard limit on incoming request bodies (covers image uploads).
+app.config["MAX_CONTENT_LENGTH"] = MAX_IMAGE_BYTES
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def today_slug() -> str:
     return date.today().isoformat()  # "2026-03-05"
+
+
+def validate_slug(slug: str):
+    """Abort with 400 if slug contains anything other than [a-zA-Z0-9_-]."""
+    if not _SLUG_RE.fullmatch(slug):
+        abort(400, description="Invalid slug")
 
 
 def note_path(slug: str) -> Path:
@@ -86,9 +100,7 @@ def all_notes_meta(q: str | None = None) -> list[dict]:
         except Exception:
             pass
 
-    results.sort(key=lambda n: (not n["pinned"], "".join(reversed(n["slug"])) if False else n["slug"]),
-                 reverse=False)
-    # Sort: pinned first, then slug descending (newest first)
+    # Sort: pinned first, then slug descending (newest-first for date-named slugs)
     results.sort(key=lambda n: (0 if n["pinned"] else 1, [-ord(c) for c in n["slug"]]))
     return results
 
@@ -151,15 +163,26 @@ def list_notes():
 
 @app.route("/api/notes/<slug>", methods=["GET"])
 def get_note(slug):
+    validate_slug(slug)
     return jsonify(read_note(slug))
 
 
 @app.route("/api/notes/<slug>", methods=["PUT"])
 def save_note(slug):
+    validate_slug(slug)
     data = request.get_json(force=True)
     if not data or "frontmatter" not in data or "body" not in data:
         return jsonify({"error": "frontmatter and body required"}), 400
-    write_note(slug, data["frontmatter"], data["body"])
+    raw_fm = data["frontmatter"]
+    # Only persist known, safe frontmatter fields — reject arbitrary client keys.
+    fm = {
+        "title": str(raw_fm.get("title", slug))[:200],
+        "date": str(raw_fm.get("date", today_slug()))[:20],
+        "type": raw_fm.get("type", "daily") if raw_fm.get("type") in ("daily", "adhoc") else "daily",
+        "pinned": bool(raw_fm.get("pinned", False)),
+        "todos": raw_fm.get("todos", []) or [],
+    }
+    write_note(slug, fm, data["body"])
     return jsonify({"ok": True})
 
 
@@ -182,6 +205,7 @@ def create_note():
 
 @app.route("/api/notes/<slug>", methods=["DELETE"])
 def delete_note(slug):
+    validate_slug(slug)
     path = note_path(slug)
     if not path.exists():
         return jsonify({"error": "Note not found"}), 404
@@ -194,6 +218,7 @@ def delete_note(slug):
 
 @app.route("/api/notes/<slug>/pin", methods=["PATCH"])
 def pin_note(slug):
+    validate_slug(slug)
     data = request.get_json(force=True) or {}
     note = read_note(slug)
     note["frontmatter"]["pinned"] = bool(data.get("pinned", False))
@@ -201,13 +226,23 @@ def pin_note(slug):
     return jsonify({"ok": True})
 
 
+ALLOWED_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
+
 @app.route("/api/images/<slug>", methods=["POST"])
 def upload_image(slug):
+    validate_slug(slug)
     if "image" not in request.files:
         return jsonify({"error": "No image provided"}), 400
     file = request.files["image"]
     if file.content_type not in ALLOWED_IMAGE_TYPES:
         return jsonify({"error": "Invalid image type"}), 400
+    # Also validate the file extension — content_type is client-controlled and could
+    # be spoofed to sneak in an SVG or HTML file that executes scripts when served.
+    ext = os.path.splitext(secure_filename(file.filename or ""))[1].lower()
+    if ext not in ALLOWED_IMAGE_EXTENSIONS:
+        return jsonify({"error": "Invalid image extension"}), 400
+    # Note: MAX_CONTENT_LENGTH (set on app) enforces the hard size limit server-side;
+    # the Content-Length header check below is an early client-friendly rejection.
     if file.content_length and file.content_length > MAX_IMAGE_BYTES:
         return jsonify({"error": "Image too large (max 10 MB)"}), 400
 
@@ -224,20 +259,24 @@ def upload_image(slug):
 
 @app.route("/images/<slug>/<filename>")
 def serve_image(slug, filename):
+    validate_slug(slug)
     img_dir = IMAGES_DIR / slug
     if not img_dir.exists():
         abort(404)
     return send_from_directory(str(img_dir), filename)
 
 
-# Catch-all: serve index.html for any non-API route
+# Catch-all: serve index.html for any non-API route.
+# send_from_directory uses Werkzeug's safe_join internally, so path traversal
+# attempts are rejected. We do NOT manually resolve paths against PUBLIC_DIR
+# before this call, as doing so could leak file existence outside the public tree.
 @app.route("/", defaults={"path": ""})
 @app.route("/<path:path>")
 def serve_frontend(path):
-    file = PUBLIC_DIR / path
-    if path and file.exists() and file.is_file():
-        return send_from_directory(str(PUBLIC_DIR), path)
-    return send_from_directory(str(PUBLIC_DIR), "index.html")
+    try:
+        return send_from_directory(str(PUBLIC_DIR), path or "index.html")
+    except Exception:
+        return send_from_directory(str(PUBLIC_DIR), "index.html")
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
