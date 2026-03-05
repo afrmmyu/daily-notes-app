@@ -54,27 +54,33 @@ const EditorModule = (() => {
           wrapper.appendChild(img);
           wrapper.appendChild(handle);
 
-          // Drag-to-resize: track mouse from handle, update wrapper width live,
-          // commit to node attribute on mouseup so auto-save picks it up.
+          // Drag-to-resize using pointer capture so the drag ends cleanly even
+          // if the pointer leaves the browser window (no dangling document listeners).
           let startX, startW;
-          handle.addEventListener('mousedown', e => {
+
+          handle.addEventListener('pointerdown', e => {
             e.preventDefault();
             e.stopPropagation();
+            handle.setPointerCapture(e.pointerId);
             startX = e.clientX;
             startW = wrapper.offsetWidth;
+          });
 
-            const onMove = e => {
-              const newW = Math.max(50, startW + e.clientX - startX);
-              wrapper.style.width = newW + 'px';
-            };
-            const onUp = e => {
-              const newW = Math.max(50, startW + e.clientX - startX);
-              updateAttributes({ width: newW });
-              document.removeEventListener('mousemove', onMove);
-              document.removeEventListener('mouseup', onUp);
-            };
-            document.addEventListener('mousemove', onMove);
-            document.addEventListener('mouseup', onUp);
+          handle.addEventListener('pointermove', e => {
+            if (!handle.hasPointerCapture(e.pointerId)) return;
+            const newW = Math.max(50, startW + e.clientX - startX);
+            wrapper.style.width = newW + 'px';
+          });
+
+          handle.addEventListener('pointerup', e => {
+            if (!handle.hasPointerCapture(e.pointerId)) return;
+            const newW = Math.max(50, startW + e.clientX - startX);
+            updateAttributes({ width: newW });
+            handle.releasePointerCapture(e.pointerId);
+          });
+
+          handle.addEventListener('pointercancel', e => {
+            handle.releasePointerCapture(e.pointerId);
           });
 
           return {
